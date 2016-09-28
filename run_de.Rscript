@@ -1,0 +1,372 @@
+#! /usr/bin/Rscript
+
+usage <- function() {
+    cat("Usage:\n")
+    cat("\trun_de.Rscript options\n")
+    cat("Options:\n")
+    cat("\t-b\t--bamDirectory\tDirectory containing bam files (required)\n")
+    cat("\t-g\t--gtfFile\tgtf file with gene annotation (required)\n")
+    cat("\t-O\t--outputFile\tOutput file to save R data image (required)\n")
+    cat("\t-m\t--model\tModel, specified as a R formula, using attributes defined with -a or --attribute (required)\n")
+    cat("\t-a\t--attribute\tAttribute whose value is specified for each sample by the bam file name. May be used in the model.\n")
+    cat("\t\t\tRequired to be repeated exactly as many times as bam file names split via the -s (--filenameSplit) option.\n")
+    cat("\t-o\t--organism\tOrganism for annotation via AnnotationDbi. Hs for human, Mm for mouse. Required.\n")
+    cat("\t-c\t--sampleClusterFilename\tFilename for png image with sample cluster. Defaults to sampleCluster.png.\n")
+    cat("\t-p\t--samplePCAFilename\tFilename for png image with PCA plot. Defaults to samplePCA.png.\n")
+    cat("\t-n\t--numHeatmapGenes\tNumber of genes to be used in the heatmap. Defaults to 250.\n")
+    cat("\t-h\t--geneHeatmapFilename\tFilename for png image with gene heatmap. Defaults to geneHeatmap.png\n")
+    cat("\t-H\t--geneHeatmapHeight\tHeight (in pixels) of png image with gene heatmap. Defaults to 1920.\n")
+    cat("\t-v\t--csvFile\tName of csv file with significant genes. Required.\n")
+    cat("\t-s\t--filenameSplit\tString on which to split filenames to derive attribute values for sample. Defaults to \"-\".\n")
+    cat("\t?\t--help\tShow this help message.\n")
+}
+
+parseArgs <- function(args) {
+   attributes <- character(0)
+   
+   # default values:
+   assign("filenameSplit", "-", .GlobalEnv)
+   assign("sampleClusterFilename", "sampleCluster.png", .GlobalEnv)
+   assign("samplePCAFilename", "samplePCA.png", .GlobalEnv)
+   assign("geneHeatmapFilename", "geneHeatmap.png", .GlobalEnv)
+   assign("numHeatmapGenes", 250, .GlobalEnv)
+   assign("geneHeatmapHeight", 1920, .GlobalEnv)
+   
+   while (length(args) > 0) {
+       name = switch(args[[1]],
+           "-b"="bamFileDir",
+           "--bamDirectory"="bamFileDir",
+           "-g"="gtffile",
+           "--gtfFile"="gtffile",
+           "-O"="outputFile",
+           "--outputFile"="outputFile",
+           "-m"="model",
+           "--model"="model",
+           "-a"="attribute",
+           "--attribute"="attribute",
+           "-o"="organism",
+           "--organism"="organism",
+           "-c"="sampleClusterFilename",
+           "--sampleClusterFilename"="sampleClusterFilename",
+           "-p"="samplePCAFilename",
+           "--samplePCAFilename"="samplePCAFilename",
+           "-n"="numHeatmapGenes",
+           "--numHeatmapGenes"="numHeatmapGenes",
+           "-h"="geneHeatmapFilename",
+           "--geneHeatmapFilename"="geneHeatmapFilename",
+           "-H"="geneHeatmapHeight",
+           "--geneHeatmapHeight"="geneHeatmapHeight",
+           "-v"="csvFile",
+           "--csvFile"="csvFile",
+           "-s"="filenameSplit",
+           "--filenameSplit"="filenameSplit",
+           "--help"="help",
+           "?"="help"
+       )
+       if (length(name)==0 || is.null(name)) {
+           stop(paste("Unknown option: ",args[[1]],"\n",usage,sep=""))
+       } else if (name=="help") {
+           usage()
+           q(save="no")
+       } else if (name=="attribute") {
+         attributes <- c(attributes, args[[2]])
+	   } else {
+           assign(name, args[[2]], .GlobalEnv)
+       }
+       args <- args[-1:-2]
+   }
+   assign("attributes", attributes, .GlobalEnv)
+}
+
+checkExists <- function(msgs, msg, variable) {
+    if (! variable %in% names(.GlobalEnv)) {
+        msgs <- c(msgs, msg)
+    }
+    msgs
+}
+
+verify <- function() {
+    msgs <- character(0)
+    
+    checks <- list(
+        c("bam file directory must be defined", "bamFileDir"),
+        c("gtf file must be defined", "gtffile"),
+        c("Output file must be defined", "outputFile"),
+        c("Model must be defined", "model"),
+        c("Organism must be defined", "organism"),
+        c("CSV file must be defined", "csvFile")
+    )
+    
+    for (check in checks) {
+        msgs <- checkExists(msgs, check[[1]], check[[2]])
+    }
+    
+    if (!all(sapply(strsplit(samples, split=filenameSplit), length)==numAttrs)) {
+        msgs <- c(msgs, "File name structure does not match number of attributes provided\n"+
+             "\tFiles must be named value1-value2-value3-...-valueN.bam, where n is the number of attributes supplied")
+    }
+    
+    if (length(msgs) > 0) {
+        cat("Some required options were missing:\n")
+        cat(paste("", msgs, sep="\t"), sep="\n")
+        usage()
+        q(save="no")
+    }
+}
+
+
+# Read command line arguments:
+cat("==============================\n");
+cat("Reading command line arguments\n")
+cat("==============================\n");
+cat("\n")
+
+args <- commandArgs(TRUE)
+
+parseArgs(args)
+
+
+# if (length(args) < 5 || args[[1]]=="-h" || args[[1]]=="--help") {
+#     stop("Usage: create_se.Rscript bamFileDirectory gtfFile outputFile model attributeName1 [attributeName2 [attributeName3 ...]]")
+# }
+# 
+# bamFileDir <- options[["bamFileDir"]]
+# gtffile <- options[["gtffile"]]
+# outputFile <- options[["outputFile"]]
+# model <- options[["model"]]
+# attributes <- options[["attributes"]]
+# organism <- options[["organism"]]
+
+numAttrs <- length(attributes)
+
+if (length(checkExists(character(0), "bam file directory must be defined", "bamFileDir")) > 0) {
+    cat("Error: bam file directory must be defined\n\n")
+    usage()
+    q(save="no")
+}
+
+files=list.files(path=bamFileDir, pattern=".*\\.bam$")
+samples=substr(files, 1, nchar(files)-nchar(".bam"))
+
+#print(files)
+#print(samples)
+
+# check all required options are provided:
+verify()
+
+#if (!all(sapply(strsplit(samples, split=filenameSplit), length)==numAttrs)) {
+#    stop("File name structure does not match number of attributes provided\n"+
+#         "\tFiles must be named value1-value2-value3-...-valueN.bam, where n is the number of attributes supplied")
+#}
+
+#TODO should verify all arguments at this point...
+
+# build sample data table using attribute names supplied in command line
+# and file names, which are expected to provide values for the sample attributes
+
+sampleData <- unlist(strsplit(samples, split="-"))
+sampleData <- as.data.frame(matrix(sampleData, ncol=numAttrs, byrow=T))
+names(sampleData) <- attributes
+
+# load required libraries
+
+cat("===========================\n");
+cat("Loading required libraries:\n")
+cat("===========================\n");
+cat("")
+
+library(Rsamtools)
+library(GenomicFeatures)
+library(GenomicAlignments)
+library(BiocParallel)
+library(DESeq2)
+library(pheatmap)
+library(RColorBrewer)
+library(AnnotationDbi)
+library(paste("org",organism,"eg","db",sep="."), character.only=T)
+
+#path <- "/seqdata/TallyHo/RNA-Seq/Liver"
+#analysis_path <- paste(path, "analysis", sep="/")
+#strain <- factor(rep(c("B6","TH"), each=12))
+#diet <- factor(rep(rep(c("chow", "HFD"), each=6), times=2))
+#replicate <- rep(1:12,2)
+#samples <- paste("L",strain,diet,replicate,sep="-")
+#files <- paste(samples,"bam",sep=".")
+#gtffile <- file.path("/seqdata/Genomes/Mus_musculus/Mus_musculus.GRCm38.81.gtf")
+
+#create BamFileList object
+
+cat("======================\n")
+cat("Creating bam file list\n")
+cat("======================\n")
+cat("\n")
+
+bamfiles <- BamFileList(paste(bamFileDir,files,sep="/"))
+
+# load transcript database from gtffile:
+
+cat("==========================\n")
+cat("Making transcript database\n")
+cat("==========================\n")
+cat("\n")
+
+txdb <- makeTxDbFromGFF(gtffile, format="gtf", circ_seqs=character(0))
+
+# create gene model
+
+cat("===================\n")
+cat("Creating gene model\n")
+cat("===================\n")
+cat("\n")
+
+exonsByGene <- exonsBy(txdb, by="gene")
+
+# set up for multiple processors
+register(MulticoreParam(workers=24))
+
+# create summarized experiment and configure with metadata
+
+cat("=================================\n")
+cat("Counting hits per gene per sample\n")
+cat("=================================\n")
+cat("\n")
+
+se <- summarizeOverlaps(features=exonsByGene, reads=bamfiles, mode="Union", singleEnd=F, ignore.strand=F, fragments=F)
+colnames(se) <- samples
+colData(se) <- DataFrame(sampleData)
+
+# create DESeqDataSet
+
+cat("=======================\n")
+cat("Building DESeq data set\n")
+cat("=======================\n")
+cat("\n")
+
+form <- formula(model)
+dds <- DESeqDataSet(se, form)
+
+# remove genes with zero or one count across all samples
+dds <- dds[rowSums(counts(dds)) > 1, ]
+
+# rlog transform data for visualization
+rlogData <- rlog(dds, blind=F)
+
+# make sample cluster map:
+
+cat("======================================================\n")
+cat("Creating cluster sample map to ",sampleClusterFilename,"\n")
+cat("======================================================\n")
+cat("\n")
+
+sampleDists <- dist(t(assay(rlogData)))
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- samples
+colnames(sampleDistMatrix) <- samples
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+png(filename=sampleClusterFilename)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+dev.off()
+
+# Create PCA plot
+
+cat("========================================\n")
+cat("Creating PCA plot to ",samplePCAFilename,"\n")
+cat("========================================\n")
+cat("\n")
+
+png(filename=samplePCAFilename)
+plotPCA(rlogData, intgroup=all.vars(form)[1:2])
+dev.off()
+
+## Differential expression:
+
+cat("===========================================\n")
+cat("Performing differential expression analysis\n")
+cat("===========================================\n")
+cat("\n")
+
+dds <- DESeq(dds)
+res <- results(dds)
+sig <- res[! is.na(res$padj) & res$padj < 0.1 ,]
+sig <- sig[order(abs(sig$log2FoldChange), decreasing=T),]
+
+sig$effect <- paste(round(2^abs(sig$log2FoldChange), 3), ifelse(sig$log2FoldChange > 0, "Up", "Down"))
+
+# Gene Heatmap:
+
+# Top effect genes for heatmap:
+
+cat("==============================================\n")
+cat("Creating gene heatmap to ",geneHeatmapFilename,"\n")
+cat("==============================================\n")
+cat("\n")
+
+heatmapGenes <- rownames(sig)[1:min(nrow(sig), as.integer(numHeatmapGenes), na.rm=T)]
+heatmapMx <- assay(rlogData)[heatmapGenes,]
+heatmapMx <- heatmapMx - rowMeans(heatmapMx)
+heatmapColAnnotation <- as.data.frame(colData(rlogData)[, all.vars(form)[1:2]])
+
+height <- as.integer(geneHeatmapHeight)
+if (is.na(height)) {
+    height <- 1920
+} 
+png(filename=geneHeatmapFilename, width=480, height=height)
+pheatmap(heatmapMx, annotation_col=heatmapColAnnotation)
+dev.off()
+
+# Add annotation:
+
+cat("============================\n")
+cat("Adding annotation to results\n")
+cat("============================\n")
+cat("\n")
+
+sig$symbol <- mapIds(get(paste("org",organism,"eg","db",sep=".")), keys=row.names(sig),
+    column="SYMBOL",
+    keytype="ENSEMBL",
+    multivals="first")
+    
+# Add FPKM:
+
+cat("======================\n")
+cat("Adding FPKM to results\n")
+cat("======================\n")
+cat("\n")
+
+# TODO : check!
+fpkm_mx <- fpkm(dds)
+colnames(fpkm_mx)<-paste("fpkm",samples,sep="-")
+sig <- cbind(sig,as.data.frame(fpkm_mx[rownames(sig),]))
+
+# Write CSV
+
+
+cat("========================\n")
+cat("Writing csv to ",csvFile,"\n")
+cat("========================\n")
+cat("\n")
+
+# TODO: check!
+write.csv(sig, file=csvFile)
+
+cat("=============\n")
+cat("Session Info:\n")
+cat("=============\n")
+cat("\n")
+
+sessionInfo()
+
+cat("==============================\n")
+cat("Saving R image to ",outputFile,"\n")
+cat("==============================\n")
+cat("\n")
+
+save.image(file=outputFile)
+
+cat("=================\n")
+cat("Analysis complete\n")
+cat("=================\n")
