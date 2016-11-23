@@ -135,7 +135,7 @@ verify <- function() {
     
     if (length(contrasts) == 0 && length(csvFiles) != 1) {
         msgs <- c(msgs, "If no contrasts are specified, exactly one csv file must be provided")
-    } else if (! identical(rep(length(contrasts),3), sapply(list(numerators, denominators, csvFiles), length))) {
+    } else if (length(contrasts) > 0 && ! identical(rep(length(contrasts),3), sapply(list(numerators, denominators, csvFiles), length))) {
         msgs <- c(msgs, "If contrasts are specified, equal numbers of contrasts, numerators, denominators, and csv files must be provided")
     }
     
