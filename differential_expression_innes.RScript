@@ -1,0 +1,124 @@
+#! /usr/bin/Rscript
+
+library(Rsamtools)
+library(GenomicFeatures)
+library(GenomicAlignments)
+library(BiocParallel)
+library(DESeq2)
+library(pheatmap)
+library(RColorBrewer)
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+library(biomaRt)
+
+bamFileDir <- "dups_marked"
+gtffile <- "/seqdata/Genomes/Homo_sapiens/Homo_sapiens.GRCh38.87.gtf"
+outputFile <- "de_analysis.RData"
+attributes <- c("id","visit","group")
+csvFile_g1 <- "significant_genes_g1.csv"
+csvFile_g2 <- "significant_genes_g2.csv"
+filenameSplit <- "-"
+
+numAttrs <- length(attributes)
+files=list.files(path=bamFileDir, pattern=".*\\.bam$")
+samples=substr(files, 1, nchar(files)-nchar(".bam"))
+
+sampleData <- unlist(strsplit(samples, split="-"))
+sampleData <- as.data.frame(matrix(sampleData, ncol=numAttrs, byrow=T))
+names(sampleData) <- attributes
+
+cat("======================\n")
+cat("Creating bam file list\n")
+cat("======================\n")
+cat("\n")
+
+bamfiles <- BamFileList(paste(bamFileDir,files,sep="/"))
+
+cat("==========================\n")
+cat("Making transcript database\n")
+cat("==========================\n")
+cat("\n")
+
+txdb <- makeTxDbFromGFF(gtffile, format="gtf", circ_seqs=character(0))
+
+cat("===================\n")
+cat("Creating gene model\n")
+cat("===================\n")
+cat("\n")
+
+exonsByGene <- exonsBy(txdb, by="gene")
+
+cat("=================================\n")
+cat("Counting hits per gene per sample\n")
+cat("=================================\n")
+cat("\n")
+
+register(MulticoreParam(workers=24))
+
+se <- summarizeOverlaps(features=exonsByGene, reads=bamfiles, mode="Union", singleEnd=F, ignore.strand=F, fragments=F)
+colnames(se) <- samples
+colData(se) <- DataFrame(sampleData)
+
+# create mock DESeq data set to estimate FPKM:
+dds_all <- DESeqDataSet(se, design=~id+visit)
+dds_all <- estimateSizeFactors(dds_all)
+dds_all <- estimateDispersions(dds_all)
+
+# interaction model (visit:group accounting for repeated measures)
+gps <- levels(sampleData$group)
+visits <- levels(sampleData$visit)
+colnames <- "(Intercept)"
+mmatrix <- matrix(data=1, ncol=1, nrow=nrow(sampleData))
+
+colnames <- c(colnames, paste0("group", gps[-1]))
+mmatrix <- cbind(mmatrix, sapply(gps[-1], function(g) ifelse(sampleData$group==g, 1, 0)))
+
+gp_id <- unlist(sapply(gps, function(g) paste(paste0("group",g), unique(sampleData$id[sampleData$group==g])[-1], sep=":")))
+colnames <- c(colnames, gp_id)
+mmatrix <- cbind(mmatrix, sapply(gp_id, function(gid) ifelse(paste0("group",sampleData$group,":",sampleData$id)==gid, 1, 0)))
+
+group_visit <- unlist(sapply(gps, function(g) paste0("group",g,":",paste0("visit", visits[-1]))))
+colnames <- c(colnames, group_visit)
+
+mmatrix <- cbind(mmatrix, sapply(group_visit, function(g_visit) ifelse(paste0("group", sampleData$group, ":visit", sampleData$visit)==g_visit, 1, 0)))
+dimnames(mmatrix) <- list(paste(sampleData$id,sampleData$visit,sep="."), colnames)
+
+dds_all <- nbinomWaldTest(dds_all, betaPrior=F, modelMatrix=mmatrix, modelMatrixType="standard")
+res_interaction <- results(dds_all, contrast=list("groupg2.visitv2","groupg1.visitv2"))
+
+# get fpkm:
+fpkm_all <- fpkm(dds_all)
+# find genes with mean fpkm > 1000 (will filter)
+high_exp <- which(rowMeans(fpkm_all) > 1000)
+
+se_filtered_g1 <- se[-high_exp, sampleData$group=="g1"]
+se_filtered_g2 <- se[-high_exp, sampleData$group=="g2"]
+
+dds_filtered_g1 <- DESeqDataSet(se_filtered_g1, design=~id+visit)
+dds_filtered_g1 <- DESeq(dds_filtered_g1)
+
+dds_filtered_g2 <- DESeqDataSet(se_filtered_g2, design=~id+visit)
+dds_filtered_g2 <- DESeq(dds_filtered_g2)
+
+res_filtered_g1 <- results(dds_filtered_g1)
+res_filtered_g2 <- results(dds_filtered_g2)
+
+sig_filtered_g1 <- as.data.frame(res_filtered_g1[with(res_filtered_g1, !is.na(padj) & padj < 0.1 & abs(log2FoldChange)>1),])
+sig_filtered_g2 <- as.data.frame(res_filtered_g2[with(res_filtered_g2, !is.na(padj) & padj < 0.1 & abs(log2FoldChange)>1),])
+
+mart <- useMart("ensembl")
+mart <- useDataset("hsapiens_gene_ensembl", mart=mart)
+
+gene_lookup <- getBM(attributes=c("ensembl_gene_id","external_gene_name"), filters="ensembl_gene_id", values=unique(c(row.names(sig_filtered_g2), row.names(sig_filtered_g1))), mart=mart)
+row.names(gene_lookup) <- gene_lookup[,1]
+sig_filtered_g1$name <- gene_lookup[row.names(sig_filtered_g1),2]
+sig_filtered_g2$name <- gene_lookup[row.names(sig_filtered_g2),2]
+
+sig_filtered_g1 <- sig_filtered_g1[order(abs(sig_filtered_g1$log2FoldChange), decreasing=T),]
+sig_filtered_g2 <- sig_filtered_g2[order(abs(sig_filtered_g2$log2FoldChange), decreasing=T),]
+
+write.csv(sig_filtered_g1, file=csvFile_g1)
+write.csv(sig_filtered_g2, file=csvFile_g2)
+
+
+save.image(outputFile)
