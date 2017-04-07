@@ -23,7 +23,7 @@ numAttrs <- length(attributes)
 files=list.files(path=bamFileDir, pattern=".*\\.bam$")
 samples=substr(files, 1, nchar(files)-nchar(".bam"))
 
-sampleData <- unlist(strsplit(samples, split="-"))
+sampleData <- unlist(strsplit(samples, split=filenameSplit))
 sampleData <- as.data.frame(matrix(sampleData, ncol=numAttrs, byrow=T))
 names(sampleData) <- attributes
 
