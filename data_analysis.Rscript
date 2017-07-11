@@ -1,3 +1,5 @@
+#! /usr/bin/Rscript
+
 bamFileDir="dups_marked/"
 attributes <- c("id","set")
 numAttrs <- length(attributes)
