@@ -1,5 +1,7 @@
 #! /usr/bin/Rscript
 
+set.seed(1)
+
 bamFileDir="dups_marked/"
 attributes <- c("id","set")
 numAttrs <- length(attributes)
@@ -54,6 +56,8 @@ all_results$symbol <- mapIds(get(paste("org",organism,"eg","db",sep=".")), keys=
   column="SYMBOL",
   keytype="ENSEMBL",
    multivals="first")
+numCols <- length(all_results)
+all_results <- all_results[,c(numCols, 2:(numCols-1))]
 all_results <- cbind(all_results, fpkm_mx)
 all_results <- all_results[order(abs(all_results$log2FoldChange), decreasing=T),]
 write.csv(all_results, file="all_data.csv", quote=F)
