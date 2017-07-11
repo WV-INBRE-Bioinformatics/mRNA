@@ -1,0 +1,57 @@
+bamFileDir="dups_marked/"
+attributes <- c("id","set")
+numAttrs <- length(attributes)
+files=list.files(path=bamFileDir, pattern=".*\\.bam$")
+samples=substr(files, 1, nchar(files)-nchar(".bam"))
+sampleData <- unlist(strsplit(samples, split="-"))
+sampleData <- as.data.frame(matrix(sampleData, ncol=numAttrs, byrow=T))
+names(sampleData) <- attributes
+organism="Hs"
+library(Rsamtools)
+library(GenomicFeatures)
+library(GenomicAlignments)
+library(BiocParallel)
+library(DESeq2)
+library(pheatmap)
+library(RColorBrewer)
+library(AnnotationDbi)
+library(paste("org",organism,"eg","db",sep="."), character.only=T)
+bamfiles <- BamFileList(paste(bamFileDir,files,sep="/"))
+gtffile <- "/seqdata/Genomes/Homo_sapiens/Homo_sapiens.GRCh38.87.gtf"
+txdb <- makeTxDbFromGFF(gtffile, format="gtf", circ_seqs=character(0))
+exonsByGene <- exonsBy(txdb, by="gene")
+register(MulticoreParam(workers=24))
+se <- summarizeOverlaps(features=exonsByGene, reads=bamfiles, mode="Union", singleEnd=F, ignore.strand=F, fragments=F)
+colData(se) <- DataFrame(sampleData)
+colnames(se) <- samples
+model = "~set"
+form <- formula(model)
+dds <- DESeqDataSet(se, form)
+dds <- dds[rowSums(counts(dds)) > 1, ]
+rlogData <- rlog(dds, blind=FALSE)
+sampleDists <- dist(t(assay(rlogData)))
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- samples
+colnames(sampleDistMatrix) <- samples
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+png(filename="sampleCluster.png")
+pheatmap(sampleDistMatrix,
+  clustering_distance_rows=sampleDists,
+  clustering_distance_cols=sampleDists,
+  col=colors)
+dev.off()
+png(filename="PCA.png")
+plotPCA(rlogData, intgroup="set")
+dev.off()
+dds <- DESeq(dds)
+res <- results(dds)
+fpkm_mx <- fpkm(dds)
+all_results <- data.frame(res)
+all_results$fold_change <- paste(round(2^abs(all_results$log2FoldChange),3), ifelse(all_results$log2FoldChange > 0, " Up", " Down"))
+all_results$symbol <- mapIds(get(paste("org",organism,"eg","db",sep=".")), keys=row.names(all_results),
+  column="SYMBOL",
+  keytype="ENSEMBL",
+   multivals="first")
+all_results <- cbind(all_results, fpkm_mx)
+all_results <- all_results[order(abs(all_results$log2FoldChange), decreasing=T),]
+write.csv(all_results, file="all_data.csv", quote=F)
