@@ -21,6 +21,8 @@ usage <- function() {
     cat("\t\t--denominator\tValue for contrast to be used for the denominator. Defaults to value assumed from model.\n")
     cat("\t-v\t--csvFile\tName of csv file with significant genes. Required.\n")
     cat("\t-s\t--filenameSplit\tString on which to split filenames to derive attribute values for sample. Defaults to \"-\".\n")
+    cat("\t\t--raw-count-file\tName of the file for saving the raw count table. Defaults to raw_counts.csv.\n")
+    cat("\t\t--normalized-count-file\tName of the file for saving the normalized count table. Defaults to normalized_counts.csv.\n")
     cat("\t?\t--help\tShow this help message.\n")
     cat("Any number of contrasts may be specified, and an output csv file will be created for each one. If no contrasts ",
         "are specified, the model will be used to determine the contrast (see DESeq2 documentation). If one or more ",
@@ -42,6 +44,8 @@ parseArgs <- function(args) {
    assign("geneHeatmapFilename", "", .GlobalEnv)
    assign("numHeatmapGenes", 250, .GlobalEnv)
    assign("geneHeatmapHeight", 1920, .GlobalEnv)
+   assign("rawCountFile", "raw_counts.csv", .GlobalEnv)
+   assign("normalizedCountFile", "normalized_counts.csv", .GlobalEnv)
    
    while (length(args) > 0) {
        name = switch(args[[1]],
@@ -71,6 +75,8 @@ parseArgs <- function(args) {
            "--csvFile"="csvFile",
            "-s"="filenameSplit",
            "--filenameSplit"="filenameSplit",
+           "--raw-count-file"="rawCountsFile",
+           "--normalized-count-file"="normalizedCountsFile",
            "--contrast"="contrast",
            "--numerator"="numerator",
            "--denominator"="denominator",
@@ -373,7 +379,8 @@ if (length(contrasts)==0) {
 #     dev.off()
 # }
 
-
+write.csv(counts(dds, normalized=F), rawCountsFile)
+write.csv(counts(dds, normalized=T), normalizedCountsFile)
 
 cat("=============\n")
 cat("Session Info:\n")
