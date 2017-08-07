@@ -379,8 +379,8 @@ if (length(contrasts)==0) {
 #     dev.off()
 # }
 
-write.csv(counts(dds, normalized=F), rawCountsFile)
-write.csv(counts(dds, normalized=T), normalizedCountsFile)
+write.csv(counts(dds, normalized=F), rawCountFile)
+write.csv(counts(dds, normalized=T), normalizedCountFile)
 
 cat("=============\n")
 cat("Session Info:\n")
