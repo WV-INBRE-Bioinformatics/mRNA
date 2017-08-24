@@ -190,7 +190,7 @@ doDeseq <- function(dds, outputFile, fpkm_mx, contrast="", numerator="", denomin
     sig <- cbind(sig,as.data.frame(fpkm_mx[rownames(sig),]))
     
     # write file:
-    write.csv(sig, file=outputFile)
+    write.csv(sig, file=outputFile, quote=F)
 }
 
 
