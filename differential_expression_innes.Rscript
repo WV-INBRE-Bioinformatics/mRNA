@@ -12,7 +12,7 @@ library(org.Hs.eg.db)
 library(biomaRt)
 
 bamFileDir <- "dups_marked"
-gtffile <- "/seqdata/Genomes/Homo_sapiens/Homo_sapiens.GRCh38.87.gtf"
+gtffile <- "/Genomes/Homo_sapiens/Homo_sapiens.GRCh38.87.gtf"
 outputFile <- "de_analysis.RData"
 attributes <- c("id","visit","group")
 csvFile_g1 <- "significant_genes_g1.csv"
