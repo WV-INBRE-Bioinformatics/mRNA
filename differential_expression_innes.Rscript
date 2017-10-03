@@ -120,5 +120,6 @@ sig_filtered_g2 <- sig_filtered_g2[order(abs(sig_filtered_g2$log2FoldChange), de
 write.csv(sig_filtered_g1, file=csvFile_g1)
 write.csv(sig_filtered_g2, file=csvFile_g2)
 
-
+sessionInfo()
+                                 
 save.image(outputFile)
