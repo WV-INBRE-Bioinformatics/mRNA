@@ -304,8 +304,8 @@ do_analysis <- function(timepoint) {
   cat("\tAnalysis on infected samples\n")
   res_inf <- results(dds_subset, list(c("treatment_treated_vs_untreated", "treatmenttreated.infectioninfected")))
   annotateAndProcessResults(res_interaction, paste("significant",timepoint,"interaction.csv", sep="_"), fpkm_subset)
-  annotateAndProcessResults(res_uninf, paste("significant",timepoint,"treated","vs","untreated","uninfected","interaction.csv", sep="_"), fpkm_subset)
-  annotateAndProcessResults(res_inf, paste("significant",timepoint,"treated","vs","untreated","infected","interaction.csv", sep="_"), fpkm_subset)
+  annotateAndProcessResults(res_uninf, paste("significant",timepoint,"treated","vs","untreated","uninfected.csv", sep="_"), fpkm_subset)
+  annotateAndProcessResults(res_inf, paste("significant",timepoint,"treated","vs","untreated","infected.csv", sep="_"), fpkm_subset)
 }
 
 for (timepoint in levels(sampleData$timepoint)) do_analysis(timepoint) 
