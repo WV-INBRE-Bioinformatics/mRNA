@@ -109,7 +109,7 @@ verify <- function() {
     
     # Specific to this analysis:
     req_attrs <- c(all.vars(form), "timepoint")
-    if (! (req_attrs %in% attributes)) {
+    if (! all(req_attrs %in% attributes)) {
         msgs <- c(msgs, "Attributes must include all the following:\n", req_attrs)
     }
      
