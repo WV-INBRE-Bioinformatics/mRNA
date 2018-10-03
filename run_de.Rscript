@@ -1,5 +1,6 @@
 #! /usr/bin/Rscript
 
+
 usage <- function() {
     cat("Usage:\n")
     cat("\trun_de.Rscript options\n")
@@ -7,41 +8,25 @@ usage <- function() {
     cat("\t-b\t--bamDirectory\tDirectory containing bam files (required)\n")
     cat("\t-g\t--gtfFile\tgtf file with gene annotation (required)\n")
     cat("\t-O\t--outputFile\tOutput file to save R data image (required)\n")
-    cat("\t-m\t--model\tModel, specified as a R formula, using attributes defined with -a or --attribute (required)\n")
     cat("\t-a\t--attribute\tAttribute whose value is specified for each sample by the bam file name. May be used in the model.\n")
     cat("\t\t\tRequired to be repeated exactly as many times as bam file names split via the -s (--filenameSplit) option.\n")
     cat("\t-o\t--organism\tOrganism for annotation via AnnotationDbi. Hs for human, Mm for mouse. Required.\n")
     cat("\t-c\t--sampleClusterFilename\tFilename for png image with sample cluster. Defaults to no image.\n")
     cat("\t-p\t--samplePCAFilename\tFilename for png image with PCA plot. Defaults to no image.\n")
     cat("\t-n\t--numHeatmapGenes\tNumber of genes to be used in the heatmap. Defaults to 250.\n")
-    cat("\t-h\t--geneHeatmapFilename\tFilename for png image with gene heatmap. Defaults to no image.\n")
     cat("\t-H\t--geneHeatmapHeight\tHeight (in pixels) of png image with gene heatmap. Defaults to 1920.\n")
     cat("\t\t--contrast\tAttribute in model to be used for a comparison (contrast). Defaults to value assumed from model.\n")
     cat("\t\t--numerator\tValue for contrast to be used for the numerator. Defaults to value assumed from model.\n")
     cat("\t\t--denominator\tValue for contrast to be used for the denominator. Defaults to value assumed from model.\n")
-    cat("\t-v\t--csvFile\tName of csv file with significant genes. Required.\n")
     cat("\t-s\t--filenameSplit\tString on which to split filenames to derive attribute values for sample. Defaults to \"-\".\n")
-    cat("\t\t--raw-count-file\tName of the file for saving the raw count table. Defaults to raw_counts.csv.\n")
-    cat("\t\t--normalized-count-file\tName of the file for saving the normalized count table. Defaults to normalized_counts.csv.\n")
     cat("\t?\t--help\tShow this help message.\n")
-    cat("Any number of contrasts may be specified, and an output csv file will be created for each one. If no contrasts ",
-        "are specified, the model will be used to determine the contrast (see DESeq2 documentation). If one or more ",
-        "contrasts are specified, the number of occurrences of --contrast, --numerator, --denominator, and --csvFile ",
-        "must be equal, and the order of their appearance in the options will be used to match them together\n")
 }
 
 parseArgs <- function(args) {
    attributes <- character(0)
-   contrasts <- character(0)
-   numerators <- character(0)
-   denominators <- character(0)
-   csvFiles <- character(0)
    
    # default values:
    assign("filenameSplit", "-", .GlobalEnv)
-   assign("sampleClusterFilename", "", .GlobalEnv)
-   assign("samplePCAFilename", "", .GlobalEnv)
-   assign("geneHeatmapFilename", "", .GlobalEnv)
    assign("numHeatmapGenes", 250, .GlobalEnv)
    assign("geneHeatmapHeight", 1920, .GlobalEnv)
    assign("rawCountFile", "raw_counts.csv", .GlobalEnv)
@@ -55,8 +40,6 @@ parseArgs <- function(args) {
            "--gtfFile"="gtffile",
            "-O"="outputFile",
            "--outputFile"="outputFile",
-           "-m"="model",
-           "--model"="model",
            "-a"="attribute",
            "--attribute"="attribute",
            "-o"="organism",
@@ -68,18 +51,10 @@ parseArgs <- function(args) {
            "-n"="numHeatmapGenes",
            "--numHeatmapGenes"="numHeatmapGenes",
            "-h"="geneHeatmapFilename",
-           "--geneHeatmapFilename"="geneHeatmapFilename",
            "-H"="geneHeatmapHeight",
            "--geneHeatmapHeight"="geneHeatmapHeight",
-           "-v"="csvFile",
-           "--csvFile"="csvFile",
            "-s"="filenameSplit",
            "--filenameSplit"="filenameSplit",
-           "--raw-count-file"="rawCountsFile",
-           "--normalized-count-file"="normalizedCountsFile",
-           "--contrast"="contrast",
-           "--numerator"="numerator",
-           "--denominator"="denominator",
            "--help"="help",
            "?"="help"
        )
@@ -98,18 +73,12 @@ parseArgs <- function(args) {
 	     numerators <- c(numerators, args[[2]])
 	   } else if (name=="denominator") {
 	     denominators <- c(denominators, args[[2]])
-	   } else if (name=="csvFile") {
-	     csvFiles <- c(csvFiles, args[[2]])
 	   } else {
            assign(name, args[[2]], .GlobalEnv)
        }
        args <- args[-1:-2]
    }
    assign("attributes", attributes, .GlobalEnv)
-   assign("contrasts", contrasts, .GlobalEnv)
-   assign("numerators", numerators, .GlobalEnv)
-   assign("denominators", denominators, .GlobalEnv)
-   assign("csvFiles", csvFiles, .GlobalEnv)
 }
 
 checkExists <- function(msgs, msg, variable) {
@@ -126,7 +95,6 @@ verify <- function() {
         c("bam file directory must be defined", "bamFileDir"),
         c("gtf file must be defined", "gtffile"),
         c("Output file must be defined", "outputFile"),
-        c("Model must be defined", "model"),
         c("Organism must be defined", "organism")
     )
     
@@ -139,12 +107,12 @@ verify <- function() {
              "\tFiles must be named value1-value2-value3-...-valueN.bam, where n is the number of attributes supplied")
     }
     
-    if (length(contrasts) == 0 && length(csvFiles) != 1) {
-        msgs <- c(msgs, "If no contrasts are specified, exactly one csv file must be provided")
-    } else if (length(contrasts) > 0 && ! identical(rep(length(contrasts),3), sapply(list(numerators, denominators, csvFiles), length))) {
-        msgs <- c(msgs, "If contrasts are specified, equal numbers of contrasts, numerators, denominators, and csv files must be provided")
+    # Specific to this analysis:
+    req_attrs <- c(all.vars(form), "timepoint")
+    if (! (req_attrs %in% attributes)) {
+        msgs <- c(msgs, "Attributes must include all the following:\n", req_attrs)
     }
-    
+     
     if (length(msgs) > 0) {
         cat("Some required options were missing:\n")
         cat(paste("", msgs, sep="\t"), sep="\n")
@@ -153,16 +121,7 @@ verify <- function() {
     }
 }
 
-doDeseq <- function(dds, outputFile, fpkm_mx, contrast="", numerator="", denominator="") {
-    if (nchar(contrast) > 0) {
-        cat("============================\n")
-        cat("Contrast ",contrast,": ",numerator," / ",denominator,"\n")
-        cat("============================\n\n")
-        res <- results(dds, contrast=c(contrast, numerator, denominator))
-    } else {
-        res <- results(dds)
-    }
-    
+annotateAndProcessResults <- function(res, outputFile, fpkm_mx=matrix(NA, ncol=0, nrow=0)) {
     # filter for FDR > 10%:
     sig <- res[! is.na(res$padj) & res$padj < 0.1 ,]
     
@@ -176,8 +135,6 @@ doDeseq <- function(dds, outputFile, fpkm_mx, contrast="", numerator="", denomin
 
     # add user friendly "fold change" column:
     sig$effect <- paste(round(2^abs(sig$log2FoldChange), 3), ifelse(sig$log2FoldChange > 0, "Up", "Down"))
-
-    ## gene heat map (pending)
     
     # add annotation:
     sig$symbol <- mapIds(get(paste("org",organism,"eg","db",sep=".")), keys=row.names(sig),
@@ -186,13 +143,16 @@ doDeseq <- function(dds, outputFile, fpkm_mx, contrast="", numerator="", denomin
         multivals="first")
         
     # add fpkm:
-    colnames(fpkm_mx)<-paste("fpkm",samples,sep="-")
     sig <- cbind(sig,as.data.frame(fpkm_mx[rownames(sig),]))
     
     # write file:
     write.csv(sig, file=outputFile, quote=F)
+
 }
 
+# hard-coded for this analysis:
+model = "~ treatment + infection + treatment:infection"
+form <- formula(model)
 
 # Read command line arguments:
 cat("==============================\n");
@@ -218,7 +178,6 @@ samples=substr(files, 1, nchar(files)-nchar(".bam"))
 
 # check all required options are provided:
 verify()
-
 
 # build sample data table using attribute names supplied in command line
 # and file names, which are expected to provide values for the sample attributes
@@ -283,6 +242,8 @@ cat("=================================\n")
 cat("\n")
 
 se <- summarizeOverlaps(features=exonsByGene, reads=bamfiles, mode="Union", singleEnd=F, ignore.strand=F, fragments=F)
+sampleData$infection <- relevel(sampleData$infection, "uninfected")
+sampleData$treatment <- relevel(sampleData$treatment, "untreated")
 colData(se) <- DataFrame(sampleData)
 colnames(se) <- samples
 
@@ -293,11 +254,8 @@ cat("Building DESeq data set\n")
 cat("=======================\n")
 cat("\n")
 
-form <- formula(model)
 dds <- DESeqDataSet(se, form)
-
-# remove genes with zero or one count across all samples
-dds <- dds[rowSums(counts(dds)) > 1, ]
+fpkm_mx <- fpkm(dds)
 
 # rlog transform data for visualization
 rlogData <- rlog(dds, blind=FALSE)
@@ -323,63 +281,37 @@ if (nchar(sampleClusterFilename) > 0) {
     dev.off()
 }
 
-
-# Create PCA plot
-if (nchar(samplePCAFilename) > 0) {
-    cat("========================================\n")
-    cat("Creating PCA plot to ",samplePCAFilename,"\n")
-    cat("========================================\n")
-    cat("\n")
-
-    png(filename=samplePCAFilename)
-    plotPCA(rlogData, intgroup=all.vars(form)[1:2])
-    dev.off()
-}
-## Differential expression:
-
-cat("===========================================\n")
-cat("Performing differential expression analysis\n")
-cat("===========================================\n")
+cat("========================================\n")
+cat("Creating PCA plot to ",samplePCAFilename,"\n")
+cat("========================================\n")
 cat("\n")
 
-dds <- DESeq(dds)
-fpkm_mx <- fpkm(dds)
 
-if (length(contrasts)==0) {
-    doDeseq(dds, csvFiles[[1]], fpkm_mx)
-} else {
-    for (i in 1:length(contrasts)) {
-        doDeseq(dds, csvFiles[[i]], fpkm_mx, contrasts[[i]], numerators[[i]], denominators[[i]])
+png(filename=samplePCAFilename)
+plotPCA(rlogData, intgroup=unique(c(all.vars(form)[1:2],"timepoint")))
+dev.off()
 
-    }
+
+do_analysis <- function(timepoint) {
+
+  cat("Running analysis for ",timepoint,"\n")
+  dds_subset <- DESeq(dds[, dds$timepoint==timepoint])
+  fpkm_subset <- fpkm_mx[,which(sampleData$timepoint==timepoint)]
+  cat("\tInteraction analysis\n")
+  res_interaction <- results(dds_subset)
+  cat("\tAnalysis on uninfected samples\n")
+  res_uninf <- results(dds_subset, contrast=c("treatment","treated","untreated"))
+  cat("\tAnalysis on infected samples\n")
+  res_inf <- results(dds_subset, list(c("treatment_treated_vs_untreated", "treatmenttreated.infectioninfected")))
+  annotateAndProcessResults(res_interaction, paste("significant",timepoint,"interaction.csv", sep="_"), fpkm_subset)
+  annotateAndProcessResults(res_uninf, paste("significant",timepoint,"treated","vs","untreated","uninfected","interaction.csv", sep="_"), fpkm_subset)
+  annotateAndProcessResults(res_inf, paste("significant",timepoint,"treated","vs","untreated","infected","interaction.csv", sep="_"), fpkm_subset)
 }
 
-# Gene Heatmap:
-
-## TODO move to doDeseq function: allow for multiple or no heatmaps....?
-
-# Top effect genes for heatmap:
-# if (nchar(geneHeatmapFilename) > 0) {
-#     cat("==============================================\n")
-#     cat("Creating gene heatmap to ",geneHeatmapFilename,"\n")
-#     cat("==============================================\n")
-#     cat("\n")
-# 
-#     heatmapGenes <- rownames(sig)[1:min(nrow(sig), as.integer(numHeatmapGenes), na.rm=T)]
-#     heatmapMx <- assay(rlogData)[heatmapGenes,]
-#     heatmapMx <- heatmapMx - rowMeans(heatmapMx)
-#     heatmapColAnnotation <- as.data.frame(colData(rlogData)[, all.vars(form)[1:2]])
-# 
-#     height <- as.integer(geneHeatmapHeight)
-#     if (is.na(height)) {
-#         height <- 1920
-#     } 
-#     png(filename=geneHeatmapFilename, width=480, height=height)
-#     pheatmap(heatmapMx, annotation_col=heatmapColAnnotation)
-#     dev.off()
-# }
+for (timepoint in levels(sampleData$timepoint)) do_analysis(timepoint) 
 
 write.csv(counts(dds, normalized=F), rawCountFile)
+dds <- estimateSizeFactors(dds)
 write.csv(counts(dds, normalized=T), normalizedCountFile)
 
 cat("=============\n")
